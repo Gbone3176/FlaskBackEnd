@@ -1,6 +1,5 @@
-from flask import Flask, render_template, request
-
-app = Flask(__name__)
+from flask import Flask, render_template,url_for
+from markupsafe import escape
 
 name = 'Bowen Guo'
 movies = [
@@ -15,6 +14,10 @@ movies = [
     {'title': 'WALL-E', 'year': '2008'},
     {'title': 'The Pork of Music', 'year': '2012'},
 ]
+
+app = Flask(__name__)
+
+
 @app.route('/')
 def index():
     return render_template('index.html', name=name, movies=movies)

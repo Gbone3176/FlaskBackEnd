@@ -20,4 +20,4 @@ movies = [
 
 @app.route('/')
 def index():
-    return render_template('index.html', name=name, movies=movies)
+    return render_template('index_ori.html', name=name, movies=movies)

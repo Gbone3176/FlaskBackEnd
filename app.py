@@ -96,7 +96,7 @@ def admin(username, password):
     db.create_all()
     user = User.query.first()
     if user is not None:
-        click.echo('User updating....')
+        click.echo('User updating...')
         user.username = username
         user.password = password
     else:

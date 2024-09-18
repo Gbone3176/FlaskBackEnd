@@ -6,6 +6,7 @@ from click import confirmation_option
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 
 WIN = sys.platform.startswith('win')
 if WIN:  # 如果是 Windows 系统，使用三个斜线
@@ -20,9 +21,12 @@ app.config['SECRET_KEY'] = 'dev'
 # 在扩展类实例化前加载配置
 
 db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'users.login'
 
 
-class User(db.Model):  # 表名将会是 user（自动生成，小写处理）
+class User(db.Model, UserMixin):  # 表名将会是 user（自动生成，小写处理）
     id = db.Column(db.Integer, primary_key=True)  # 主键
     name = db.Column(db.String(20))  # 名字
     username = db.Column(db.String(20))  # 登录用户名
@@ -42,10 +46,12 @@ class Movie(db.Model):  # 表名将会是 movie
 
 
 @app.cli.command()
-@click.option('--drop', is_flag=True, help='Create after drop.')  # 在使用命令flask initdb 时可以选择使用或不使用--drop，
-# 作用和action='store_true'类似
+@click.option('--drop', is_flag=True, help='Create after drop.')
 def initdb(drop):
-    '''Initialize the database'''
+    '''
+    Initialize the database
+    在使用命令flask initdb 时可以选择使用或不使用--drop，作用和action='store_true'类似
+    '''
     if drop:
         db.drop_all()
     db.create_all()
@@ -110,10 +116,19 @@ def inject_user():
     return dict(user=user)
 
 
+@login_manager.user_loader
+def load_user(user_id):
+    user = User.query.get(int(user_id))
+    return user
+
+
+#  以下是视图函数
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':  # 判断是否是 POST 请求
         # 获取表单数据
+        if not current_user.is_authenticated:  # 如果当前用户未认证
+            return redirect(url_for('index'))  # 重定向到主页
         title = request.form.get('title')  # 传入表单对应输入字段的 name 值
         year = request.form.get('year')
         # 验证数据
@@ -132,6 +147,7 @@ def index():
 
 
 @app.route('/movie/edit/<int:movie_id>', methods=['GET', 'POST'])
+@login_required
 def edit(movie_id):
     movie = Movie.query.get_or_404(movie_id)
 
@@ -152,13 +168,67 @@ def edit(movie_id):
     return render_template('edit.html', movie=movie)  # 传入被编辑的电影记录
 
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if not username or not password:
+            flash('Invalid input.')
+            return redirect(url_for('login'))
+
+        user = User.query.first()
+        # 验证用户名和密码是否一致
+        if username == user.username and user.check_password(password):
+            login_user(user)  # 登入用户
+            flash('Login success.')
+            return redirect(url_for('index'))  # 重定向到主页
+
+        flash('Invalid username or password.')  # 如果验证失败，显示错误消息
+        return redirect(url_for('login'))  # 重定向回登录页面
+
+    return render_template('login.html')
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Logged out successfully.')
+    return redirect(url_for('index'))
+
+
 @app.route('/movie/delete/<int:movie_id>', methods=['POST'])
+@login_required
 def delete(movie_id):
     movie = Movie.query.get_or_404(movie_id)
     db.session.delete(movie)
     db.session.commit()
     flash('Item deleted.')
     return redirect(url_for('index'))
+
+
+@app.route('/settings', methods=['GET', 'POST'])
+@login_required
+def settings():
+    if request.method == 'POST':
+        name = request.form['name'] #  这个修改的是一个网页内用户的昵称，不是登录的用户名
+
+        if not name or len(name) > 20:
+            flash('Invalid input.')
+            return redirect(url_for('settings'))
+
+        current_user.name = name
+        # current_user 会返回当前登录用户的数据库记录对象
+        # 等同于下面的用法
+        # user = User.query.first()
+        # user.name = name
+        db.session.commit()
+        flash('Settings updated.')
+        return redirect(url_for('index'))
+
+    return render_template('settings.html')
 
 
 @app.errorhandler(404)  # 传入要处理的错误代码
